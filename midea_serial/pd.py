@@ -17,23 +17,20 @@
 
 import sigrokdecode as srd
 from math import ceil
-from .crc8 import calculate
+from .util import crc8, checksum
 
 RX = 0
 TX = 1
 rxtx_channels = ('RX', 'TX')
 
-DATA_OFFSET = 3
-CRC8_DATA_OFFSET = 10
-CHECKSUM_DATA_OFFSET = 1
+MSG_BODY_OFFSET = 10
 
 
+# message bits from http://chipsc.com/home/views/default/resource/images/111.pdf
 class DecoderState:
-    IDLE, READ_LENGTH, READ_DEVICE_TYPE, READ_DATA, READ_CRC8, READ_CHECKSUM, ERROR = range(7)
-
-
-def checksum(data):
-    return (~ sum(data) + 1) & 0xff
+    IDLE, READ_MESSAGE_LENGTH, READ_APPLIANCE_TYPE, READ_FRAME_SYNC_CHECK, READ_KEEP, \
+     READ_MESSAGE_ID, READ_FRAMEWORK_AGREEMENT_VERSION, READ_APPLIANCE_AGREEMENT_VERSION, \
+     READ_MESSAGE_TYPE, READ_MESSAGE_BODY, READ_CHECKSUM = range(11)
 
 
 class Decoder(srd.Decoder):
@@ -47,24 +44,21 @@ class Decoder(srd.Decoder):
     outputs = []
     tags = ['Embedded/industrial']
     annotations = (
-        ('uc-start', 'UC start'),
-        ('uc-length', 'UC length'),
-        ('uc-device-type', 'UC device type'),
-        ('uc-data', 'UC data'),
-        ('uc-crc8', 'UC crc8'),
-        ('uc-checksum', 'UC checksum'),
-        ('cu-start', 'CU start'),
-        ('cu-length', 'CU length'),
-        ('cu-device-type', 'CU device type'),
-        ('cu-data', 'CU data'),
-        ('cu-crc8', 'CU crc8'),
-        ('cu-checksum', 'CU checksum'),
-        ('error-indication', 'Error indication'),
+        ('am-sync', 'AM sync'),  # 0
+        ('am-header', 'AM header'),  # 1
+        ('am-body', 'AM body'),  # 2
+        ('am-checksum', 'AM checksum'),  # 3
+        ('ma-sync', 'MA sync'),  # 4
+        ('ma-header', 'MA header'),  # 5
+        ('ma-body', 'MA body'),  # 6
+        ('ma-checksum', 'MA checksum'),  # 7
+        ('error-indication', 'Error indication'),  # 8
     )
+    annotations_stride = int(len(annotations) / 2)
     annotation_rows = (
-        ('uc', 'Unit->controller', (0, 1, 2, 3, 4, 5)),
-        ('cu', 'Controller->unit', (6, 7, 8, 9, 10, 11)),
-        ('error-indicators', 'Errors in frame', (12,)),
+        ('am', 'Appliance->Module', tuple(range(4))),
+        ('ma', 'Module->Appliance', tuple(range(4, 8))),
+        ('error-indicators', 'Errors in frame', (8,)),
     )
 
     def __init__(self):
@@ -72,8 +66,10 @@ class Decoder(srd.Decoder):
 
     def reset(self):
         self.state = [DecoderState.IDLE, DecoderState.IDLE]
-        self.cmd = [[], []]
-        self.ss_data_block = [None, None]
+        self.msg = [[], []]
+        self.msg_id = [None, None]
+        self.msg_type = [None, None]
+        self.ss_msg_body_block = [None, None]
         self.data_lenght = [0, 0]
         self.data_read = [0, 0]
 
@@ -83,55 +79,70 @@ class Decoder(srd.Decoder):
     def decode(self, ss, es, data):
         ptype, rxtx, pdata = data
 
-        # For now, ignore all UART packets except the actual data packets.
+        # ignore all UART packets except the actual data packets.
         if ptype != 'DATA':
             return
 
+        if self.state[rxtx] != DecoderState.IDLE:
+            self.msg[rxtx].append(pdata[0])
+            self.data_read[rxtx] += 1
+
         if self.state[rxtx] == DecoderState.IDLE:
-            if pdata[0] == 0xAA:  # 0xAA marks the start of a message
-                self.cmd[rxtx] = [0xAA]
-                self.ss_data_block[rxtx] = None
-                self.state[rxtx] = DecoderState.READ_LENGTH
-                self.put(ss, es, self.out_ann, [0 + (rxtx * 6), ['Start', 'ST', 'S']])
-        elif self.state[rxtx] == DecoderState.READ_LENGTH:
-            self.cmd[rxtx].append(pdata[0])
+            if pdata[0] == 0xAA:  # 0xAA sync header
+                self.msg[rxtx] = []
+                self.msg_id[rxtx] = None
+                self.msg_type[rxtx] = None
+                self.data_read[rxtx] = 0
+                self.ss_msg_body_block[rxtx] = None
+
+                self.state[rxtx] = DecoderState.READ_MESSAGE_LENGTH
+
+                self.put(ss, es, self.out_ann, [0 + (rxtx * Decoder.annotations_stride), ['Sync']])
+        elif self.state[rxtx] == DecoderState.READ_MESSAGE_LENGTH:
             self.data_lenght[rxtx] = pdata[0]
-            self.data_read[rxtx] = 1  # length includes length byte
-            self.state[rxtx] = DecoderState.READ_DEVICE_TYPE
+            self.state[rxtx] = DecoderState.READ_APPLIANCE_TYPE
+
             self.put(ss, es, self.out_ann,
-                     [1 + (rxtx * 6), ['Length: {:d}'.format(self.data_lenght[rxtx]),
-                                       'L{:d}'.format(self.data_lenght[rxtx]), 'L']])
-        elif self.state[rxtx] == DecoderState.READ_DEVICE_TYPE:
-            self.cmd[rxtx].append(pdata[0])
-            self.data_read[rxtx] += 1
-            self.state[rxtx] = DecoderState.READ_DATA
-            self.put(ss, es, self.out_ann, [2 + (rxtx * 6), ['Type: {:02X}'.format(pdata[0]),
-                                                             'T{:02X}'.format(pdata[0]), 'T']])
-        elif self.state[rxtx] == DecoderState.READ_DATA:
-            self.cmd[rxtx].append(pdata[0])
-            if self.ss_data_block[rxtx] is None:
-                self.ss_data_block[rxtx] = ss
-            self.data_read[rxtx] += 1
-            if self.data_read[rxtx] == (self.data_lenght[rxtx] - 2):  # data without crc8 and checksum bytes
-                self.state[rxtx] = DecoderState.READ_CRC8
-                self.put(self.ss_data_block[rxtx], es, self.out_ann,
-                         [3 + (rxtx * 6),
-                          [' '.join(['{:02X}'.format(n) for n in self.cmd[rxtx][DATA_OFFSET:]]), 'Data']])
-        elif self.state[rxtx] == DecoderState.READ_CRC8:
-            self.cmd[rxtx].append(pdata[0])
-            self.data_read[rxtx] += 1
-            self.state[rxtx] = DecoderState.READ_CHECKSUM
-            crc8_result = calculate(self.cmd[rxtx][CRC8_DATA_OFFSET:-1])
-            self.put(ss, es, self.out_ann, [4 + (rxtx * 6), ['CRC8: {:02X}'.format(crc8_result), 'CRC8']])
-            if crc8_result != pdata[0]:
-                self.put(ss, es, self.out_ann, [12, ['CRC8 failed']])
+                     [1 + (rxtx * Decoder.annotations_stride), ['L: {:d}'.format(self.data_lenght[rxtx])]])
+        elif self.state[rxtx] == DecoderState.READ_APPLIANCE_TYPE:
+            self.state[rxtx] = DecoderState.READ_FRAME_SYNC_CHECK
+            self.put(ss, es, self.out_ann, [1 + (rxtx * Decoder.annotations_stride), ['At: {:02X}'.format(pdata[0])]])
+        elif self.state[rxtx] == DecoderState.READ_FRAME_SYNC_CHECK:
+            self.state[rxtx] = DecoderState.READ_KEEP
+            self.put(ss, es, self.out_ann, [1 + (rxtx * Decoder.annotations_stride), ['Fs: {:02X}'.format(pdata[0])]])
+        elif self.state[rxtx] == DecoderState.READ_KEEP:
+            if self.data_read[rxtx] == 5:
+                self.state[rxtx] = DecoderState.READ_MESSAGE_ID
+            self.put(ss, es, self.out_ann, [1 + (rxtx * Decoder.annotations_stride), ['{:02X}'.format(pdata[0])]])
+        elif self.state[rxtx] == DecoderState.READ_MESSAGE_ID:
+            self.msg_id[rxtx] = pdata[0]
+            self.state[rxtx] = DecoderState.READ_FRAMEWORK_AGREEMENT_VERSION
+            self.put(ss, es, self.out_ann, [1 + (rxtx * Decoder.annotations_stride), ['Mid:{:02X}'.format(pdata[0])]])
+        elif self.state[rxtx] == DecoderState.READ_FRAMEWORK_AGREEMENT_VERSION:
+            self.state[rxtx] = DecoderState.READ_APPLIANCE_AGREEMENT_VERSION
+            self.put(ss, es, self.out_ann, [1 + (rxtx * Decoder.annotations_stride), ['Fv:{:02X}'.format(pdata[0])]])
+        elif self.state[rxtx] == DecoderState.READ_APPLIANCE_AGREEMENT_VERSION:
+            self.state[rxtx] = DecoderState.READ_MESSAGE_TYPE
+            self.put(ss, es, self.out_ann, [1 + (rxtx * Decoder.annotations_stride), ['Av:{:02X}'.format(pdata[0])]])
+        elif self.state[rxtx] == DecoderState.READ_MESSAGE_TYPE:
+            self.msg_type[rxtx] = pdata[0]
+            self.state[rxtx] = DecoderState.READ_MESSAGE_BODY
+            self.put(ss, es, self.out_ann, [1 + (rxtx * Decoder.annotations_stride), ['Mt:{:02X}'.format(pdata[0])]])
+        elif self.state[rxtx] == DecoderState.READ_MESSAGE_BODY:
+            if self.ss_msg_body_block[rxtx] is None:
+                self.ss_msg_body_block[rxtx] = ss
+
+            if self.data_read[rxtx] == (self.data_lenght[rxtx] - 1):
+                self.state[rxtx] = DecoderState.READ_CHECKSUM
+
+                self.put(self.ss_msg_body_block[rxtx], es, self.out_ann,
+                         [2 + (rxtx * Decoder.annotations_stride),
+                          [' '.join(['{:02X}'.format(n) for n in self.msg[rxtx][MSG_BODY_OFFSET:]]), 'Data']])
         elif self.state[rxtx] == DecoderState.READ_CHECKSUM:
-            self.cmd[rxtx].append(pdata[0])
-            self.data_read[rxtx] += 1
             self.state[rxtx] = DecoderState.IDLE
-            checksum_result = checksum(self.cmd[rxtx][CHECKSUM_DATA_OFFSET:-1])
-            self.put(ss, es, self.out_ann, [5 + (rxtx * 6), ['Checksum: {:02X}'.format(checksum_result), 'CKS']])
-            if checksum_result != pdata[0]:
-                self.put(ss, es, self.out_ann, [12, ['Checksum failed']])
-            data_str = ''.join(['{:02X}'.format(n) for n in self.cmd[rxtx]])
+
+            self.put(ss, es, self.out_ann, [3 + (rxtx * Decoder.annotations_stride), ['Csum: {:02X}'.format(pdata[0])]])
+            if checksum(self.msg[rxtx]) != 0:
+                self.put(ss, es, self.out_ann, [8, ['Checksum failed']])
+            data_str = ''.join(['{:02X}'.format(n) for n in self.msg[rxtx]])
             print('RXTX[{}]: L={} D={}'.format(rxtx, self.data_lenght[rxtx], data_str))

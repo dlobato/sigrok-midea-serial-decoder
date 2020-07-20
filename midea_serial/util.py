@@ -1,7 +1,5 @@
-# from https://github.com/mac-zhou/midea-msmart/blob/master/msmart/crc8.py
-VERSION = '0.1.20'
-
-# The huge CRC table! Aparently this can be generated, but storage space is cheap...
+# from https://github.com/mac-zhou/midea-msmart
+# matches CRC8/Maxim reflected lookup table from http://www.sunshine2k.de/coding/javascript/crc/crc_js.html
 crc8_854_table = [
     0x00, 0x5E, 0xBC, 0xE2, 0x61, 0x3F, 0xDD, 0x83,
     0xC2, 0x9C, 0x7E, 0x20, 0xA3, 0xFD, 0x1F, 0x41,
@@ -38,7 +36,7 @@ crc8_854_table = [
 ]
 
 
-def calculate(data):
+def crc8(data):
     crc_value = 0
     for m in data:
         k = crc_value ^ m
@@ -48,3 +46,7 @@ def calculate(data):
             k += 256
         crc_value = crc8_854_table[k]
     return crc_value
+
+
+def checksum(data):
+    return (~ sum(data) + 1) & 0xff
