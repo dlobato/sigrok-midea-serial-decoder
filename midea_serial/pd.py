@@ -32,6 +32,33 @@ APPLIANCE_VERSION_OFFSET = 7
 MSG_TYPE_OFFSET = 8
 MSG_BODY_OFFSET = 9
 
+wifi_mode_req_str = {
+    1: 'Switch to AP mode',
+    2: 'Switch to STA mode',
+}
+
+wifi_mode_res_str = {
+    0: 'The mode has not changed',
+    1: 'Switched from STA to AP mode',
+    2: 'Switched from AP to STA mode',
+}
+
+ac_mode_str = {
+    1: 'auto',
+    2: 'cool',
+    3: 'dry',
+    4: 'heat',
+    5: 'fan only',
+}
+
+ac_fan_speed_str = {
+    20: 'silent',
+    40: 'low',
+    60: 'medium',
+    80: 'high',
+    102: 'auto',
+}
+
 
 # message bits from http://chipsc.com/home/views/default/resource/images/111.pdf [1]
 class DecoderState:
@@ -107,10 +134,13 @@ class Decoder(srd.Decoder):
                 self.put(self.ss_header_block[rxtx], es, self.out_ann,
                          [1 + (rxtx * Decoder.bytes_annotations_stride), [
                              'L: {:d}, At: {:02X}, Mid:{:02X}, v:{:02X}{:02X}'.format(self.data[rxtx][LENGTH_OFFSET],
-                                                                                      self.data[rxtx][APPLIANCE_TYPE_OFFSET],
+                                                                                      self.data[rxtx][
+                                                                                          APPLIANCE_TYPE_OFFSET],
                                                                                       self.data[rxtx][MSG_ID_OFFSET],
-                                                                                      self.data[rxtx][FRAMEWORK_VERSION_OFFSET],
-                                                                                      self.data[rxtx][APPLIANCE_VERSION_OFFSET])]])
+                                                                                      self.data[rxtx][
+                                                                                          FRAMEWORK_VERSION_OFFSET],
+                                                                                      self.data[rxtx][
+                                                                                          APPLIANCE_VERSION_OFFSET])]])
         elif self.state[rxtx] == DecoderState.READ_MESSAGE:
             if self.ss_msg_block[rxtx] is None:
                 self.ss_msg_block[rxtx] = ss
@@ -138,7 +168,8 @@ class Decoder(srd.Decoder):
     def cmd_handler_default(self, ss, es, data):
         rxtx, read_data = data
 
-        self.put(ss, es, self.out_ann, [6 + rxtx, ['msg type 0x{:02X}'.format(read_data[MSG_TYPE_OFFSET]), '0x{:02X}'.format(read_data[MSG_TYPE_OFFSET])]])
+        self.put(ss, es, self.out_ann, [6 + rxtx, ['msg type 0x{:02X}'.format(read_data[MSG_TYPE_OFFSET]),
+                                                   '0x{:02X}'.format(read_data[MSG_TYPE_OFFSET])]])
 
     # appliance -> module
     def cmd_handler_0x04(self, ss, es, data):  # Equipment operating parameters report (no response)
@@ -242,20 +273,10 @@ class Decoder(srd.Decoder):
         msg_body = read_data[MSG_BODY_OFFSET:]
 
         if rxtx == 0:
-            req_str = 'Switch to unknown mode'
-            if msg_body[0] == 1:
-                res_str = 'Switch to AP mode'
-            elif msg_body[0] == 2:
-                res_str = 'Switch to STA mode'
+            req_str = wifi_mode_req_str[msg_body[0]] if msg_body[0] in wifi_mode_req_str else 'Switch to unknown mode'
             self.put(ss, es, self.out_ann, [6 + rxtx, [req_str, '0x81>']])
         else:
-            res_str = 'Unknown response'
-            if msg_body[0] == 0:
-                res_str = 'The mode has not changed'
-            elif msg_body[0] == 1:
-                res_str = 'Switched from STA to AP mode'
-            elif msg_body[0] == 1:
-                res_str = 'Switched from AP to STA mode'
+            res_str = wifi_mode_res_str[msg_body[0]] if msg_body[0] in wifi_mode_res_str else 'Unknown response'
             self.put(ss, es, self.out_ann, [6 + rxtx, [res_str, '<0x81']])
 
     def cmd_handler_0x82(self, ss, es, data):  # Wi-Fi module restart
@@ -290,13 +311,125 @@ class Decoder(srd.Decoder):
     def cmd_handler_0x02_0xac(self, ss, es, data):  # AC Device control command
         rxtx, read_data = data
 
-        msg_body = read_data[MSG_BODY_OFFSET:]
+        msg_body = read_data[MSG_BODY_OFFSET:-1]
+        msg_crc = read_data[-1]
+        msg_id = msg_body[-1]
 
-        if crc8(msg_body) == 0:
+        data_str = ''.join(['{:02X}'.format(n) for n in msg_body])
+        print('BODY[{}]: L={} D={}'.format(rxtx, len(msg_body), data_str))
+
+        if crc8(msg_body) == msg_crc:
             if rxtx == 1:
-                self.put(ss, es, self.out_ann, [6 + rxtx, ['AC control command', '0x02>']])
+                if msg_body[0] & 0x40 and len(msg_body) == 24:
+                    status_flags = []
+                    if msg_body[1] & 0x40:
+                        status_flags.append('keyStatus')
+                    if msg_body[1] & 0x20:
+                        status_flags.append('fastCheckActive')
+                    if msg_body[1] & 0x10:
+                        status_flags.append('timerMode')
+                    if msg_body[1] & 0x08:
+                        status_flags.append('childSleepMode')
+                    if msg_body[1] & 0x04:
+                        status_flags.append('resume')
+                    if msg_body[1] & 0x02:
+                        status_flags.append('remoteControlMode')
+                    status_flags.append('on' if msg_body[1] & 0x01 else 'off')
+                    status_flags_str = ', '.join(status_flags)
+
+                    mode = (msg_body[2] & 0xE0) >> 5
+                    mode_str = ac_mode_str[mode] if mode in ac_mode_str else 'unknown({})'.format(mode)
+
+                    setpoint = (msg_body[2] & 0x0F) + 16 + (0.5 if msg_body[2] & 0x10 else 0)
+
+                    fanspeed = msg_body[3]
+                    fanspeed_str = ac_fan_speed_str[fanspeed] if fanspeed in ac_fan_speed_str else '{}'.format(fanspeed)
+
+                    # msg_body[4] onTimer TODO
+                    # msg_body[5] offTimer TODO
+                    # msg_body[6] timerOffMinutes TODO
+
+                    horizontal_swing_on = msg_body[7] & 0xC0
+                    vertical_swing_on = msg_body[7] & 0x03
+                    swing_str = 'horizontal ' + ('on' if horizontal_swing_on else 'off')
+                    swing_str += ',vertical ' + ('on' if vertical_swing_on else 'off')
+
+                    # msg_body[8] more flags TODO
+                    # msg_body[9] more flags TODO
+                    # msg_body[10] more flags TODO
+                    # msg_body[11] sleepCurveTempPhase TODO
+                    # msg_body[12] sleepCurveTempPhase TODO
+                    # msg_body[13] sleepCurveTempPhase TODO
+                    # msg_body[14] sleepCurveTempPhase TODO
+                    # msg_body[15] sleepCurveTempPhase TODO
+                    # msg_body[16] tempUnitPhase TODO
+                    # msg_body[17]  TODO
+                    # msg_body[18]  TODO
+                    # msg_body[19]  TODO
+                    # msg_body[20]  TODO
+                    # msg_body[21]  TODO
+                    # msg_body[22]  TODO
+
+                    self.put(ss, es, self.out_ann, [6 + rxtx, [
+                        'Control command[{}]: {}, mode={}, setpoint={:.2f}, fanspeed={}, swing={}'.format(msg_id,
+                                                                                                          status_flags_str,
+                                                                                                          mode_str,
+                                                                                                          setpoint,
+                                                                                                          fanspeed_str,
+                                                                                                          swing_str),
+                        '0x02[{}]>'.format(msg_id)]])
+                else:
+                    self.put(ss, es, self.out_ann,
+                             [6 + rxtx, ['Unknown control command[{}]'.format(msg_id), '<0x02[{}]'.format(msg_id)]])
             else:
-                self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for AC control command', '<0x02']])
+                if msg_body[0] & 0xC0 and len(msg_body) == 24:
+                    status_flags = []
+                    if msg_body[1] & 0x80:
+                        status_flags.append('error')
+                    if msg_body[1] & 0x20:
+                        status_flags.append('fastCheckActive')
+                    if msg_body[1] & 0x10:
+                        status_flags.append('timerMode')
+                    if msg_body[1] & 0x04:
+                        status_flags.append('resume')
+                    status_flags.append('on' if msg_body[1] & 0x01 else 'off')
+                    status_flags_str = ', '.join(status_flags)
+
+                    mode = (msg_body[2] & 0xE0) >> 5
+                    mode_str = ac_mode_str[mode] if mode in ac_mode_str else 'unknown({})'.format(mode)
+
+                    setpoint = (msg_body[2] & 0x0F) + 16 + (0.5 if msg_body[2] & 0x10 else 0)
+
+                    fanspeed = msg_body[3]
+                    fanspeed_str = ac_fan_speed_str[fanspeed] if fanspeed in ac_fan_speed_str else '{}'.format(fanspeed)
+
+                    horizontal_swing_on = msg_body[7] & 0xC0
+                    vertical_swing_on = msg_body[7] & 0x03
+                    swing_str = 'horizontal ' + ('on' if horizontal_swing_on else 'off')
+                    swing_str += ',vertical ' + ('on' if vertical_swing_on else 'off')
+
+                    indoor_temperature = (msg_body[11] - 50) / 2
+                    outdoor_temperature = (msg_body[12] - 50) / 2
+                    # indoor_temperature_dot = msg_body[15] & 0x0F TODO
+                    # outdoor_temperature_dot = (msg_body[15] & 0xF0) >> 4 TODO
+
+                    error_code = msg_body[16]
+
+                    self.put(ss, es, self.out_ann, [6 + rxtx, [
+                        'Response[{}]: {}, mode={}, setpoint={:.2f}, fanspeed={}, swing={}, indoor T={}, outdoor T={}, error code={}'.format(
+                            msg_id,
+                            status_flags_str,
+                            mode_str,
+                            setpoint,
+                            fanspeed_str,
+                            swing_str,
+                            indoor_temperature,
+                            outdoor_temperature,
+                            error_code),
+                        '<0x02[{}]'.format(msg_id)]])
+                else:
+                    self.put(ss, es, self.out_ann,
+                             [6 + rxtx, ['Unknown response for AC control command', '<0x02[{}]'.format(msg_id)]])
         else:
             self.put(ss, es, self.out_ann, [8, ['CRC8 failed']])
 
