@@ -147,53 +147,53 @@ class Decoder(srd.Decoder):
         if rxtx == 0:
             self.put(ss, es, self.out_ann, [6 + rxtx, ['Equipment operating parameters report', '0x04']])
         else:
-            self.put(ss, es, self.out_ann, [8, ['Response not expected', 'RNE', '0x04']])
+            self.put(ss, es, self.out_ann, [8, ['Response not expected', '!0x04']])
 
     def cmd_handler_0x05(self, ss, es, data):  # Reporting of equipment operating parameters (response required)
         rxtx, read_data = data
 
         if rxtx == 0:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Equipment operating parameters report', 'RQ0x05']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Equipment operating parameters report with response', '0x05>']])
         else:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Equipment operating parameters report', 'RS0x05']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Equipment operating parameters report', '<0x05']])
 
     def cmd_handler_0x06(self, ss, es, data):  # Equipment abnormal event reporting (no response)
         rxtx, read_data = data
 
         if rxtx == 0:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Equipment abnormal event reporting']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Equipment abnormal event reporting', '0x06']])
         else:
-            self.put(ss, es, self.out_ann, [8, ['Response not expected']])
+            self.put(ss, es, self.out_ann, [8, ['Response not expected', '!0x06']])
 
     def cmd_handler_0x0a(self, ss, es, data):  # Equipment abnormal event reporting (requires response)
         rxtx, read_data = data
 
         if rxtx == 0:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Equipment abnormal event reporting']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Equipment abnormal event reporting with response', '0x0A>']])
         else:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Equipment abnormal event reporting']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Equipment abnormal event reporting', '<0x0A']])
 
     def cmd_handler_0x12(self, ss, es, data):  # SSID rename
         rxtx, read_data = data
 
         if rxtx == 0:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['SSID rename']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['SSID rename', '0x12>']])
         else:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for SSID rename']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for SSID rename', '<0x12']])
 
     def cmd_handler_0x61(self, ss, es, data):  # Time adjustment
         rxtx, read_data = data
 
         if rxtx == 0:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Time adjustment']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Time adjustment', '0x61>']])
         else:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Time adjustment']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Time adjustment', '<0x61']])
 
     def cmd_handler_0x63(self, ss, es, data):  # Home appliance query network and signal status
         rxtx, read_data = data
 
         if rxtx == 0:  # request from appliance
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Query network status']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Query network status', '0x63>']])
         else:
             msg_body = read_data[MSG_BODY_OFFSET:]
             module_type = 'RF' if msg_body[0] == 0 else 'Wi-Fi'
@@ -209,31 +209,32 @@ class Decoder(srd.Decoder):
                 '{}({}), IP: {}.{}.{}.{}, Net Status: {}, Cloud status: {}'.format(module_type, module_mode,
                                                                                    ip_address[3], ip_address[2],
                                                                                    ip_address[1], ip_address[0],
-                                                                                   network_status, cloud_status)]])
+                                                                                   network_status, cloud_status),
+                '<0x63']])
 
     def cmd_handler_0x68(self, ss, es, data):  # Switch Wi-Fi signal command
         rxtx, read_data = data
 
         if rxtx == 0:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Switch Wi-Fi signal command']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Switch Wi-Fi signal command', '0x68>']])
         else:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Switch Wi-Fi signal command']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Switch Wi-Fi signal command', '<0x68']])
 
     def cmd_handler_0x6a(self, ss, es, data):  # Wi-Fi parameter configuration
         rxtx, read_data = data
 
         if rxtx == 0:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Wi-Fi parameter configuration']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Wi-Fi parameter configuration', '0x6A>']])
         else:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Wi-Fi parameter configuration']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Wi-Fi parameter configuration', '<0x6A']])
 
     def cmd_handler_0x6b(self, ss, es, data):  # Home appliance query AP list
         rxtx, read_data = data
 
         if rxtx == 0:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Home appliance query AP list']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Home appliance query AP list', '0x6B>']])
         else:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Home appliance query AP list']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Home appliance query AP list', '<0x6B']])
 
     def cmd_handler_0x81(self, ss, es, data):  # Wi-Fi working mode switch
         rxtx, read_data = data
@@ -246,7 +247,7 @@ class Decoder(srd.Decoder):
                 res_str = 'Switch to AP mode'
             elif msg_body[0] == 2:
                 res_str = 'Switch to STA mode'
-            self.put(ss, es, self.out_ann, [6 + rxtx, [req_str]])
+            self.put(ss, es, self.out_ann, [6 + rxtx, [req_str, '0x81>']])
         else:
             res_str = 'Unknown response'
             if msg_body[0] == 0:
@@ -255,7 +256,7 @@ class Decoder(srd.Decoder):
                 res_str = 'Switched from STA to AP mode'
             elif msg_body[0] == 1:
                 res_str = 'Switched from AP to STA mode'
-            self.put(ss, es, self.out_ann, [6 + rxtx, [res_str]])
+            self.put(ss, es, self.out_ann, [6 + rxtx, [res_str, '<0x81']])
 
     def cmd_handler_0x82(self, ss, es, data):  # Wi-Fi module restart
         rxtx, read_data = data
@@ -263,27 +264,28 @@ class Decoder(srd.Decoder):
         msg_body = read_data[MSG_BODY_OFFSET:]
 
         if rxtx == 0:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Wi-Fi module restart']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Wi-Fi module restart', '0x82>']])
         else:
             res_str = 'Restart successful' if msg_body[0] == 0 else 'Restart failed'
-            self.put(ss, es, self.out_ann, [6 + rxtx, [res_str]])
+            self.put(ss, es, self.out_ann, [6 + rxtx, [res_str, '<0x82']])
 
     def cmd_handler_0x83(self, ss, es, data):  # Restore factory settings of Wi-Fi module
         rxtx, read_data = data
 
         if rxtx == 0:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Restore factory settings of Wi-Fi module']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Restore factory settings of Wi-Fi module', '0x83>']])
         else:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Restore factory settings of Wi-Fi module']])
+            self.put(ss, es, self.out_ann,
+                     [6 + rxtx, ['Response for Restore factory settings of Wi-Fi module', '<0x83']])
 
     # module -> appliance
     def cmd_handler_0x02(self, ss, es, data):  # generic Device control command
         rxtx, read_data = data
 
         if rxtx == 1:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Device control command']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Device control command', '0x02>']])
         else:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Device control command']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Device control command', '<0x02']])
 
     def cmd_handler_0x02_0xac(self, ss, es, data):  # AC Device control command
         rxtx, read_data = data
@@ -292,9 +294,9 @@ class Decoder(srd.Decoder):
 
         if crc8(msg_body) == 0:
             if rxtx == 1:
-                self.put(ss, es, self.out_ann, [6 + rxtx, ['AC control command']])
+                self.put(ss, es, self.out_ann, [6 + rxtx, ['AC control command', '0x02>']])
             else:
-                self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for AC control command']])
+                self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for AC control command', '<0x02']])
         else:
             self.put(ss, es, self.out_ann, [8, ['CRC8 failed']])
 
@@ -304,9 +306,9 @@ class Decoder(srd.Decoder):
         msg_body = read_data[MSG_BODY_OFFSET:]
 
         if rxtx == 1:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Device query command']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Device query command', '0x03>']])
         else:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Device query command']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Device query command', '<0x03']])
 
     def cmd_handler_0x03_0xac(self, ss, es, data):  # AC Device query command
         rxtx, read_data = data
@@ -315,9 +317,9 @@ class Decoder(srd.Decoder):
 
         if crc8(msg_body) == 0:
             if rxtx == 1:
-                self.put(ss, es, self.out_ann, [6 + rxtx, ['AC query command']])
+                self.put(ss, es, self.out_ann, [6 + rxtx, ['AC query command', '0x03>']])
             else:
-                self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for AC query command']])
+                self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for AC query command', '<0x03']])
         else:
             self.put(ss, es, self.out_ann, [8, ['CRC8 failed']])
 
@@ -325,39 +327,39 @@ class Decoder(srd.Decoder):
         rxtx, read_data = data
 
         if rxtx == 1:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Device electronic ID acquisition']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Device electronic ID acquisition', '0x07>']])
         else:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Device electronic ID acquisition']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Device electronic ID acquisition', '<0x07']])
 
     def cmd_handler_0x0d(self, ss, es, data):  # Device networking notification
         rxtx, read_data = data
 
         if rxtx == 1:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Device networking notification']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Device networking notification', '0x0D']])
         else:
-            self.put(ss, es, self.out_ann, [8, ['Response not expected']])
+            self.put(ss, es, self.out_ann, [8, ['Response not expected', '!0x0D']])
 
     def cmd_handler_0x11(self, ss, es, data):  # Write device electronic ID
         rxtx, read_data = data
 
         if rxtx == 1:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Write device electronic ID']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Write device electronic ID', '0x11>']])
         else:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Write device electronic ID']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Write device electronic ID', '<0x11']])
 
     def cmd_handler_0x13(self, ss, es, data):  # Read MAC address
         rxtx, read_data = data
 
         if rxtx == 1:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Read MAC address']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Read MAC address', '0x13>']])
         else:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Read MAC address']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Read MAC address', '<0x13']])
 
     def cmd_handler_0xa0(self, ss, es, data):  # Home appliance model and basic information query
         rxtx, read_data = data
 
         if rxtx == 1:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Home appliance model and basic information query']])
+            self.put(ss, es, self.out_ann, [6 + rxtx, ['Home appliance model and basic information query', '0xA0>']])
         else:
-            self.put(ss, es, self.out_ann, [6 + rxtx, ['Response for Home appliance model and basic information query']])
-
+            self.put(ss, es, self.out_ann,
+                     [6 + rxtx, ['Response for Home appliance model and basic information query', '<0xA0']])
